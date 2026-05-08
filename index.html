@@ -212,7 +212,9 @@ tbody td{padding:0;vertical-align:middle;}
     <div class="tab active" onclick="sw('ov')">Overview</div>
     <div class="tab" onclick="sw('dot')">Dotazioni</div>
     <div class="tab" onclick="sw('pos')">PC Poseidon</div>
-    <div class="tab" onclick="sw('req')">Richieste</div>
+    <div class="tab" onclick="sw('req')">Richieste PC</div>
+    <div class="tab" onclick="sw('mob')">Richieste Mobile</div>
+    <div class="tab" onclick="sw('ric')">Riconsegna</div>
   </div>
 
   <div class="main">
@@ -300,6 +302,65 @@ tbody td{padding:0;vertical-align:middle;}
       </table></div>
     </div>
 
+    <!-- RICHIESTE MOBILE -->
+    <div id="tab-mob" class="panel">
+      <div class="sh">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="st">Richieste Mobile</span>
+          <span class="cb" id="m-cnt">—</span>
+        </div>
+        <div class="ctrl">
+          <input type="text" id="m-q" placeholder="Cerca beneficiario..." oninput="fMob()">
+          <button class="btn btn-grn" onclick="addMob()">+ Aggiungi</button>
+          <button class="btn" onclick="expCSV(mobData,'richieste_mobile')">↓ CSV</button>
+        </div>
+      </div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Richiedente</th><th>Beneficiario</th><th>Mobile</th><th>Data Richiesta</th>
+          <th style="width:44px"></th>
+        </tr></thead>
+        <tbody id="m-body"></tbody>
+      </table></div>
+    </div>
+
+    <!-- RICONSEGNA DISPOSITIVI -->
+    <div id="tab-ric" class="panel">
+      <div class="sh">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="st">Riconsegna Dispositivi</span>
+          <span class="cb" id="rc-cnt">—</span>
+        </div>
+        <div class="ctrl">
+          <input type="text" id="rc-q" placeholder="Cerca risorsa..." oninput="fRic()">
+          <select id="rc-mot" onchange="fRic()">
+            <option value="">Tutti i motivi</option>
+            <option>Dimissioni</option><option>Guasto</option>
+            <option>Upgrade</option><option>Fine progetto</option>
+          </select>
+          <select id="rc-dev" onchange="fRic()">
+            <option value="">Tutti i dispositivi</option>
+            <option>Laptop</option><option>Smartphone</option>
+          </select>
+          <button class="btn btn-grn" onclick="addRic()">+ Aggiungi</button>
+          <button class="btn" onclick="expCSV(ricData,'riconsegna_dispositivi')">↓ CSV</button>
+        </div>
+      </div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th onclick="srt('ric','risorsa')">Risorsa ↕</th>
+          <th onclick="srt('ric','dispositivo')">Dispositivo ↕</th>
+          <th onclick="srt('ric','motivo')">Motivo ↕</th>
+          <th onclick="srt('ric','data_consegna')">Data Consegna ↕</th>
+          <th>Riconsegnato da</th>
+          <th>Dove</th>
+          <th>Note / Seriale</th>
+          <th style="width:44px"></th>
+        </tr></thead>
+        <tbody id="rc-body"></tbody>
+      </table></div>
+    </div>
+
   </div>
 </div><!-- /app -->
 
@@ -310,8 +371,8 @@ const SB_URL='https://plxsuxnaiyyobwrgriaa.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBseHN1eG5haXl5b2J3cmdyaWFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMjAzODEsImV4cCI6MjA5Mzc5NjM4MX0.NBtAt3SZ-blBmCc2GS8IZc4KWG9uorGVmcTBDZHx9P0';
 const sb=supabase.createClient(SB_URL,SB_KEY);
 
-let dotData=[],posData=[],reqData=[];
-let sorts={dot:{col:'nominativo',asc:true},pos:{col:'id_dispositivo',asc:true},req:{col:'data_richiesta',asc:false}};
+let dotData=[],posData=[],reqData=[],mobData=[],ricData=[];
+let sorts={dot:{col:'nominativo',asc:true},pos:{col:'id_dispositivo',asc:true},req:{col:'data_richiesta',asc:false},ric:{col:'data_consegna',asc:false}};
 
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 async function initAuth(){
@@ -377,18 +438,20 @@ function setStatus(ok){
 // ── LOAD ──────────────────────────────────────────────────────────────────────
 async function loadAll(){
   try{
-    const[d,p,r]=await Promise.all([
+    const[d,p,r,m,rc]=await Promise.all([
       sb.from('dotazioni').select('*').order('nominativo'),
       sb.from('poseidon_pcs').select('*').order('id_dispositivo').order('data_affidamento'),
-      sb.from('richieste_pc').select('*').order('data_richiesta',{ascending:false})
+      sb.from('richieste_pc').select('*').order('data_richiesta',{ascending:false}),
+      sb.from('richieste_mobile').select('*').order('data_richiesta',{ascending:false}),
+      sb.from('riconsegna_dispositivi').select('*').order('data_consegna',{ascending:false})
     ]);
-    if(d.error||p.error||r.error)throw(d.error||p.error||r.error);
-    dotData=d.data;posData=p.data;reqData=r.data;
+    if(d.error||p.error||r.error||m.error||rc.error)throw(d.error||p.error||r.error||m.error||rc.error);
+    dotData=d.data;posData=p.data;reqData=r.data;mobData=m.data;ricData=rc.data;
     setStatus(true);
     document.getElementById('sync-info').textContent='Sync '+new Date().toLocaleTimeString('it-IT');
     rebuildSede();
     renderKPIs();renderCharts();
-    fDot();fPos();fReq();
+    fDot();fPos();fReq();fMob();fRic();
   }catch(e){setStatus(false);toast('Errore caricamento: '+e.message,'err');}
 }
 
@@ -610,7 +673,7 @@ function fmtDate(v){if(!v)return'—';try{return new Date(v).toLocaleDateString(
 
 // ── TABS ──────────────────────────────────────────────────────────────────────
 function sw(t){
-  const ts=['ov','dot','pos','req'];
+  const ts=['ov','dot','pos','req','mob','ric'];
   document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',ts[i]===t));
   document.querySelectorAll('.panel').forEach(el=>el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
@@ -668,7 +731,7 @@ document.getElementById('xlsx-fi').addEventListener('change',async e=>{
     try{
       const wb=XLSX.read(ev.target.result,{type:'array'});
       const ts=new Date().toISOString();
-      const results={dot:null,pos:null,req:null};
+      const results={dot:null,pos:null,req:null,mob:null,ric:null};
 
       // ── 1. DOTAZIONI (chiave: nominativo) ──────────────────────────────────
       const dsn=wb.SheetNames.find(s=>s.toLowerCase().includes('aggiornata'))||wb.SheetNames[0];
@@ -777,21 +840,74 @@ document.getElementById('xlsx-fi').addEventListener('change',async e=>{
         }
       }
 
-      await loadAll();
+      // ── 4. RICHIESTE MOBILE (chiave: beneficiario|data_richiesta) ──────────
+      const msn=wb.SheetNames.find(s=>s.toLowerCase().includes('mobile'));
+      if(msn){
+        const mobMap=new Map();
+        XLSX.utils.sheet_to_json(wb.Sheets[msn],{defval:''}).forEach(row=>{
+          const ben=cv(row['Beneficiario']);if(!ben)return;
+          const data=toISODate(row['Data Richiesta']);
+          const key=`${ben}|${data||''}`;
+          mobMap.set(key,{richiedente:cv(row['Richiedente']),beneficiario:ben,mobile:cv(row['Mobile']),data_richiesta:data});
+        });
+        if(mobMap.size) results.mob=await syncTable('richieste_mobile',mobMap,'beneficiario');
+      }
 
-      // Toast riepilogo
+      // ── 5. RICONSEGNA DISPOSITIVI (chiave: risorsa|dispositivo|data_consegna) ─
+      const rcsn=wb.SheetNames.find(s=>s.toLowerCase().includes('riconsegna'));
+      if(rcsn){
+        const ricMap=new Map();
+        XLSX.utils.sheet_to_json(wb.Sheets[rcsn],{defval:''}).forEach(row=>{
+          const risorsa=cv(row['Risorsa']);if(!risorsa)return;
+          const dc=toISODate(row['Data Consegna']);
+          const disp=cv(row['Dispositivo']);
+          const key=`${risorsa}|${disp}|${dc||''}`;
+          ricMap.set(key,{
+            risorsa,dispositivo:disp,motivo:cv(row['Motivo']),
+            data_consegna:dc,riconsegnato_da:cv(row['Riconsegnato da']),
+            dove:cv(row['Dove']),
+            note:[cv(row[Object.keys(row)[6]]),cv(row[Object.keys(row)[7]])].filter(Boolean).join(' ')
+          });
+        });
+        if(ricMap.size){
+          const{data:dbRic,error:rce}=await sb.from('riconsegna_dispositivi')
+            .select('id,risorsa,dispositivo,data_consegna');
+          if(rce)throw rce;
+          const dbRicMap=new Map(dbRic.map(r=>[`${r.risorsa}|${r.dispositivo||''}|${r.data_consegna||''}`,r.id]));
+          const toIns=[],toUpd=[],toDel=[];
+          ricMap.forEach((data,key)=>{
+            if(dbRicMap.has(key)) toUpd.push({id:dbRicMap.get(key),...data,updated_at:ts});
+            else toIns.push(data);
+          });
+          dbRicMap.forEach((_,key)=>{ if(!ricMap.has(key)) toDel.push(dbRicMap.get(key)); });
+          const ops=[];
+          if(toUpd.length) ops.push(sb.from('riconsegna_dispositivi').upsert(toUpd,{onConflict:'id'}));
+          if(toIns.length) ops.push(sb.from('riconsegna_dispositivi').insert(toIns));
+          if(toDel.length) ops.push(sb.from('riconsegna_dispositivi').delete().in('id',toDel));
+          if(ops.length){
+            const res=await Promise.all(ops);
+            const errs=res.filter(r=>r.error).map(r=>r.error.message);
+            if(errs.length)throw new Error(errs.join(', '));
+          }
+          results.ric={ins:toIns.length,upd:toUpd.length,del:toDel.length};
+        }
+      }
+
+
       const fmt=(label,r)=>r?
         `<b>${label}</b> `+
         `<span style="color:var(--grn)">+${r.ins}</span> `+
         `<span style="color:var(--acc2)">~${r.upd}</span> `+
         `<span style="color:var(--red)">-${r.del}</span>`:
-        `<b>${label}</b> <span style="color:var(--mut)">foglio non trovato</span>`;
+        `<b>${label}</b> <span style="color:var(--mut)">—</span>`;
 
       toast(
-        `✓ Sync completato &nbsp;|&nbsp; `+
+        `✓ Sync &nbsp;|&nbsp; `+
         fmt('Dotazioni',results.dot)+` &nbsp;|&nbsp; `+
         fmt('Poseidon',results.pos)+` &nbsp;|&nbsp; `+
-        fmt('Richieste',results.req),
+        fmt('Richieste PC',results.req)+` &nbsp;|&nbsp; `+
+        fmt('Mobile',results.mob)+` &nbsp;|&nbsp; `+
+        fmt('Riconsegna',results.ric),
         'ok'
       );
 
@@ -801,7 +917,80 @@ document.getElementById('xlsx-fi').addEventListener('change',async e=>{
   e.target.value='';
 });
 
-// ── CSV EXPORT ────────────────────────────────────────────────────────────────
+// ── RICHIESTE MOBILE ─────────────────────────────────────────────────────────
+function fMob(){
+  const q=(document.getElementById('m-q').value||'').toLowerCase();
+  let data=mobData.filter(r=>!q||(r.beneficiario||'').toLowerCase().includes(q)||(r.richiedente||'').toLowerCase().includes(q));
+  document.getElementById('m-cnt').textContent=data.length+' richieste';
+  const tb=document.getElementById('m-body');tb.innerHTML='';
+  data.forEach(r=>{
+    const tr=document.createElement('tr');
+    [makeCell(r.richiedente,r.id,'richiedente','richieste_mobile',v=>`<span style="color:var(--mut)">${escH(v||'—')}</span>`),
+     makeCell(r.beneficiario,r.id,'beneficiario','richieste_mobile'),
+     makeCell(r.mobile,r.id,'mobile','richieste_mobile',v=>v?`<span class="bdg b-phn">${escH(v)}</span>`:`<span style="color:var(--mut)">—</span>`),
+     makeCell(r.data_richiesta,r.id,'data_richiesta','richieste_mobile',dateSpan)
+    ].forEach(c=>{const td=document.createElement('td');td.appendChild(c);tr.appendChild(td);});
+    const act=document.createElement('td');
+    act.innerHTML=`<div class="cell-actions"><button class="icon-btn del" onclick="delRow('richieste_mobile','${r.id}')" title="Elimina">✕</button></div>`;
+    tr.appendChild(act);tb.appendChild(tr);
+  });
+}
+
+async function addMob(){
+  const{data,error}=await sb.from('richieste_mobile').insert({richiedente:'',beneficiario:'Nuovo',mobile:'',data_richiesta:new Date().toISOString().split('T')[0]}).select().single();
+  if(error){toast('Errore: '+error.message,'err');return;}
+  mobData.unshift(data);fMob();toast('✓ Riga aggiunta','inf');
+}
+
+// ── RICONSEGNA DISPOSITIVI ────────────────────────────────────────────────────
+const motivoBdg=v=>{
+  const map={Dimissioni:'var(--red)',Guasto:'var(--amb)',Upgrade:'var(--acc2)','Fine progetto':'var(--tel)'};
+  const col=map[v]||'var(--mut)';
+  return v?`<span class="bdg" style="background:rgba(0,0,0,.15);color:${col};border:1px solid ${col}40">${escH(v)}</span>`:`<span style="color:var(--mut)">—</span>`;
+};
+const dispBdg=v=>{
+  if(!v)return`<span style="color:var(--mut)">—</span>`;
+  if(v.toLowerCase().includes('smart'))return`<span class="bdg b-phn">${escH(v)}</span>`;
+  return`<span class="bdg b-len">${escH(v)}</span>`;
+};
+
+function fRic(){
+  const q=(document.getElementById('rc-q').value||'').toLowerCase();
+  const mot=document.getElementById('rc-mot').value;
+  const dev=document.getElementById('rc-dev').value;
+  let data=ricData.filter(r=>{
+    if(q&&!(r.risorsa||'').toLowerCase().includes(q))return false;
+    if(mot&&r.motivo!==mot)return false;
+    if(dev&&!(r.dispositivo||'').toLowerCase().includes(dev.toLowerCase()))return false;
+    return true;
+  });
+  const s=sorts.ric;
+  data.sort((a,b)=>{const va=(a[s.col]||'').toString().toLowerCase(),vb=(b[s.col]||'').toString().toLowerCase();return s.asc?(va>vb?1:-1):(va<vb?1:-1);});
+  document.getElementById('rc-cnt').textContent=data.length+' riconsegne';
+  const tb=document.getElementById('rc-body');tb.innerHTML='';
+  data.forEach(r=>{
+    const tr=document.createElement('tr');
+    [makeCell(r.risorsa,r.id,'risorsa','riconsegna_dispositivi'),
+     makeCell(r.dispositivo,r.id,'dispositivo','riconsegna_dispositivi',dispBdg),
+     makeCell(r.motivo,r.id,'motivo','riconsegna_dispositivi',motivoBdg),
+     makeCell(r.data_consegna,r.id,'data_consegna','riconsegna_dispositivi',dateSpan),
+     makeCell(r.riconsegnato_da,r.id,'riconsegnato_da','riconsegna_dispositivi',v=>`<span style="color:var(--mut)">${escH(v||'—')}</span>`),
+     makeCell(r.dove,r.id,'dove','riconsegna_dispositivi',v=>`<span style="color:var(--mut)">${escH(v||'—')}</span>`),
+     makeCell(r.note,r.id,'note','riconsegna_dispositivi',v=>v?`<span class="nc"><span class="wd"></span>${escH(v)}</span>`:'')
+    ].forEach(c=>{const td=document.createElement('td');td.appendChild(c);tr.appendChild(td);});
+    const act=document.createElement('td');
+    act.innerHTML=`<div class="cell-actions"><button class="icon-btn del" onclick="delRow('riconsegna_dispositivi','${r.id}')" title="Elimina">✕</button></div>`;
+    tr.appendChild(act);tb.appendChild(tr);
+  });
+}
+
+async function addRic(){
+  const{data,error}=await sb.from('riconsegna_dispositivi').insert({risorsa:'Nuova Risorsa',dispositivo:'Laptop',motivo:'',data_consegna:new Date().toISOString().split('T')[0],riconsegnato_da:'',dove:'',note:''}).select().single();
+  if(error){toast('Errore: '+error.message,'err');return;}
+  ricData.unshift(data);fRic();toast('✓ Riga aggiunta','inf');
+}
+
+
 function expCSV(data,name){
   if(!data.length)return;
   const cols=Object.keys(data[0]).filter(k=>k!=='id'&&k!=='updated_at');
