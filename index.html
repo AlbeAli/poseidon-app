@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POSEIDON — Asset Management</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0f1117;--sur:#181c27;--sur2:#1f2535;--brd:#2a3148;--brd2:#3a4460;
+  --txt:#e2e8f8;--mut:#7a8aaa;--acc:#4f7cff;--acc2:#6a94ff;
+  --grn:#22c97a;--red:#f04458;--amb:#f5a623;--tel:#20c4c4;
+  --f:'JetBrains Mono','Courier New',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--txt);font-family:var(--f);font-size:13px;min-height:100vh;}
+
+/* ── LOGIN PAGE ─────────────────────────────────────────────────────────── */
+#login-page{
+  display:flex;align-items:center;justify-content:center;
+  min-height:100vh;padding:20px;
+  background:var(--bg);
+}
+.login-wrap{width:100%;max-width:360px;}
+.login-logo{display:flex;align-items:center;gap:12px;margin-bottom:36px;}
+.login-mark{width:36px;height:36px;background:var(--acc);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0;}
+.login-title{font-size:18px;font-weight:600;letter-spacing:.04em;}
+.login-sub{font-size:10px;color:var(--mut);letter-spacing:.1em;text-transform:uppercase;margin-top:2px;}
+.login-card{background:var(--sur);border:1px solid var(--brd);border-radius:10px;padding:28px;}
+.login-field{margin-bottom:18px;}
+.login-label{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:8px;}
+.login-input{
+  width:100%;background:var(--sur2);border:1px solid var(--brd2);
+  color:var(--txt);padding:10px 12px;border-radius:7px;
+  font-family:var(--f);font-size:13px;outline:none;transition:border .15s;
+}
+.login-input:focus{border-color:var(--acc);}
+.login-input::placeholder{color:var(--mut);}
+.login-btn{
+  width:100%;background:var(--acc);border:none;color:#fff;
+  padding:11px;border-radius:7px;font-family:var(--f);font-size:13px;
+  font-weight:600;letter-spacing:.05em;cursor:pointer;transition:all .15s;
+  margin-top:4px;
+}
+.login-btn:hover{background:var(--acc2);}
+.login-btn:disabled{opacity:.5;cursor:not-allowed;}
+.login-err{
+  background:rgba(240,68,88,.1);border:1px solid rgba(240,68,88,.25);
+  color:var(--red);border-radius:7px;padding:10px 12px;
+  font-size:12px;margin-top:14px;display:none;
+}
+.login-err.show{display:block;}
+.login-footer{text-align:center;margin-top:18px;font-size:10px;color:var(--mut);}
+
+/* ── APP (hidden until logged in) ──────────────────────────────────────── */
+#app{display:none;}
+
+/* ── HEADER ─────────────────────────────────────────────────────────────── */
+.hdr{background:var(--sur);border-bottom:1px solid var(--brd);padding:11px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.logo{display:flex;align-items:center;gap:9px;flex-shrink:0;}
+.lm{width:26px;height:26px;background:var(--acc);border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;color:#fff;}
+.lt{font-size:13px;font-weight:600;letter-spacing:.05em;}
+.ls{font-size:9px;color:var(--mut);letter-spacing:.1em;text-transform:uppercase;}
+.hdr-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.pill{padding:3px 10px;border-radius:20px;font-size:10px;letter-spacing:.08em;border:1px solid;}
+.pill-grn{background:rgba(34,201,122,.12);color:var(--grn);border-color:rgba(34,201,122,.3);}
+.pill-red{background:rgba(240,68,88,.1);color:var(--red);border-color:rgba(240,68,88,.25);}
+.user-pill{background:rgba(79,124,255,.1);color:var(--acc2);border:1px solid rgba(79,124,255,.25);padding:3px 10px;border-radius:20px;font-size:10px;}
+.logout-btn{background:transparent;border:1px solid var(--brd2);color:var(--mut);padding:4px 12px;border-radius:6px;cursor:pointer;font-family:var(--f);font-size:11px;transition:all .15s;}
+.logout-btn:hover{border-color:var(--red);color:var(--red);}
+
+/* ── TABS ───────────────────────────────────────────────────────────────── */
+.tabs{background:var(--sur);border-bottom:1px solid var(--brd);padding:0 20px;display:flex;}
+.tab{padding:11px 16px;cursor:pointer;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);border-bottom:2px solid transparent;transition:all .15s;}
+.tab:hover{color:var(--txt);}
+.tab.active{color:var(--acc2);border-bottom-color:var(--acc);}
+
+/* ── MAIN ───────────────────────────────────────────────────────────────── */
+.main{padding:20px;max-width:1400px;}
+
+/* ── KPI ────────────────────────────────────────────────────────────────── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin-bottom:20px;}
+.kpi{background:var(--sur);border:1px solid var(--brd);border-radius:8px;padding:14px;}
+.kpi-l{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:7px;}
+.kpi-v{font-size:26px;font-weight:600;line-height:1;}
+.kpi-s{font-size:10px;color:var(--mut);margin-top:5px;}
+.kpi.g .kpi-v{color:var(--grn);}.kpi.r .kpi-v{color:var(--red);}.kpi.b .kpi-v{color:var(--acc2);}.kpi.a .kpi-v{color:var(--amb);}.kpi.t .kpi-v{color:var(--tel);}
+
+/* ── CHARTS ─────────────────────────────────────────────────────────────── */
+.ch-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px;}
+.ch-card{background:var(--sur);border:1px solid var(--brd);border-radius:8px;padding:14px;}
+.ch-t{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:12px;}
+.bi{display:flex;align-items:center;gap:7px;margin-bottom:7px;}
+.bl{width:76px;font-size:10px;color:var(--mut);flex-shrink:0;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bt{flex:1;background:var(--sur2);border-radius:3px;height:7px;overflow:hidden;}
+.bf{height:100%;border-radius:3px;}
+.bc{width:26px;font-size:10px;color:var(--txt);text-align:right;flex-shrink:0;}
+
+/* ── SECTION ────────────────────────────────────────────────────────────── */
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap;}
+.st{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);}
+.ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+input[type=text],select{background:var(--sur);border:1px solid var(--brd);color:var(--txt);padding:5px 9px;border-radius:6px;font-family:var(--f);font-size:12px;outline:none;}
+input[type=text]:focus,select:focus{border-color:var(--acc);}
+input[type=text]{width:190px;}
+select option{background:var(--sur2);}
+.btn{background:var(--sur2);border:1px solid var(--brd2);color:var(--txt);padding:5px 12px;border-radius:6px;cursor:pointer;font-family:var(--f);font-size:11px;transition:all .15s;}
+.btn:hover{background:var(--brd);border-color:var(--acc);color:var(--acc2);}
+.btn-grn{background:rgba(34,201,122,.1);border-color:rgba(34,201,122,.3);color:var(--grn);}
+.btn-grn:hover{background:rgba(34,201,122,.2);}
+
+/* ── TABLE ──────────────────────────────────────────────────────────────── */
+.tw{overflow-x:auto;border:1px solid var(--brd);border-radius:8px;}
+table{width:100%;border-collapse:collapse;}
+thead th{background:var(--sur2);color:var(--mut);font-size:9px;letter-spacing:.1em;text-transform:uppercase;padding:9px 12px;text-align:left;border-bottom:1px solid var(--brd);white-space:nowrap;cursor:pointer;user-select:none;}
+thead th:hover{color:var(--txt);}
+tbody tr{border-bottom:1px solid var(--brd);transition:background .1s;}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover{background:rgba(79,124,255,.04);}
+tbody td{padding:0;vertical-align:middle;}
+
+/* ── EDITABLE CELLS ─────────────────────────────────────────────────────── */
+.cell{padding:8px 12px;min-height:36px;display:flex;align-items:center;cursor:text;white-space:nowrap;gap:4px;}
+.cell:hover{background:rgba(79,124,255,.07);}
+.cell.editing{padding:0;}
+.cell input,.cell select{background:var(--sur2);border:1px solid var(--acc);color:var(--txt);padding:7px 10px;border-radius:0;font-family:var(--f);font-size:12px;outline:none;width:100%;min-width:100px;height:36px;}
+
+/* ── ACTIONS ────────────────────────────────────────────────────────────── */
+.cell-actions{padding:4px 8px;display:flex;gap:4px;align-items:center;}
+.icon-btn{background:transparent;border:none;cursor:pointer;padding:3px 6px;border-radius:4px;font-size:12px;transition:background .1s;color:var(--mut);}
+.icon-btn:hover{background:var(--sur2);color:var(--txt);}
+.icon-btn.del:hover{background:rgba(240,68,88,.15);color:var(--red);}
+
+/* ── BADGES ─────────────────────────────────────────────────────────────── */
+.bdg{display:inline-block;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:500;}
+.b-on{background:rgba(34,201,122,.12);color:var(--grn);border:1px solid rgba(34,201,122,.25);}
+.b-off{background:rgba(240,68,88,.1);color:var(--red);border:1px solid rgba(240,68,88,.2);}
+.b-att{background:rgba(34,201,122,.12);color:var(--grn);border:1px solid rgba(34,201,122,.25);}
+.b-chi{background:rgba(122,138,170,.1);color:var(--mut);border:1px solid rgba(122,138,170,.2);}
+.b-sed{background:rgba(79,124,255,.1);color:var(--acc2);border:1px solid rgba(79,124,255,.2);}
+.b-pos{background:rgba(32,196,196,.1);color:var(--tel);border:1px solid rgba(32,196,196,.2);}
+.b-len{background:rgba(245,166,35,.1);color:var(--amb);border:1px solid rgba(245,166,35,.2);}
+.b-phn{background:rgba(32,196,196,.08);color:var(--tel);border:1px solid rgba(32,196,196,.18);}
+
+/* ── MISC ───────────────────────────────────────────────────────────────── */
+.alert{background:rgba(240,68,88,.08);border:1px solid rgba(240,68,88,.2);border-radius:8px;padding:11px 14px;margin-bottom:18px;font-size:12px;color:var(--red);display:flex;gap:10px;}
+.cb{background:var(--sur2);border:1px solid var(--brd);color:var(--mut);padding:2px 7px;border-radius:20px;font-size:10px;}
+.nc{color:var(--amb);font-size:10px;max-width:170px;overflow:hidden;text-overflow:ellipsis;}
+.wd{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--amb);margin-right:5px;vertical-align:middle;}
+.panel{display:none;}.panel.active{display:block;}
+.toast{position:fixed;bottom:22px;right:22px;background:var(--sur2);border:1px solid var(--brd2);border-radius:8px;padding:11px 16px;font-size:12px;display:none;align-items:center;gap:8px;z-index:999;}
+.toast.show{display:flex;}
+.toast.ok{border-color:rgba(34,201,122,.4);color:var(--grn);}
+.toast.err{border-color:rgba(240,68,88,.4);color:var(--red);}
+.toast.inf{border-color:rgba(79,124,255,.4);color:var(--acc2);}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid var(--brd2);border-top-color:var(--acc);border-radius:50%;animation:sp .6s linear infinite;vertical-align:middle;margin-right:5px;}
+@keyframes sp{to{transform:rotate(360deg)}}
+.saving{color:var(--mut);font-size:10px;}
+.imp-btn{position:relative;}
+.imp-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0;}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ LOGIN PAGE ═══════════════════════════════ -->
+<div id="login-page">
+  <div class="login-wrap">
+    <div class="login-logo">
+      <div class="login-mark">PS</div>
+      <div>
+        <div class="login-title">POSEIDON</div>
+        <div class="login-sub">Asset Management — Accesso riservato</div>
+      </div>
+    </div>
+    <div class="login-card">
+      <div class="login-field">
+        <label class="login-label" for="login-email">Email</label>
+        <input class="login-input" type="email" id="login-email" placeholder="nome@azienda.it" autocomplete="email">
+      </div>
+      <div class="login-field" style="margin-bottom:22px;">
+        <label class="login-label" for="login-pwd">Password</label>
+        <input class="login-input" type="password" id="login-pwd" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="login-btn" id="login-btn" onclick="doLogin()">Accedi</button>
+      <div class="login-err" id="login-err"></div>
+    </div>
+    <div class="login-footer">Accesso consentito solo a utenti autorizzati</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ APP ══════════════════════════════════════ -->
+<div id="app">
+  <div class="hdr">
+    <div class="logo">
+      <div class="lm">PS</div>
+      <div><div class="lt">POSEIDON</div><div class="ls">Asset Management</div></div>
+    </div>
+    <div class="hdr-right">
+      <span class="pill pill-grn" id="db-status">● Connessione...</span>
+      <span class="user-pill" id="user-email"></span>
+      <span style="color:var(--mut);font-size:10px;" id="sync-info"></span>
+      <label class="btn imp-btn" title="Importa xlsx">
+        ⬆ Importa xlsx
+        <input type="file" id="xlsx-fi" accept=".xlsx,.xls">
+      </label>
+      <button class="logout-btn" onclick="doLogout()">Esci →</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="sw('ov')">Overview</div>
+    <div class="tab" onclick="sw('dot')">Dotazioni</div>
+    <div class="tab" onclick="sw('pos')">PC Poseidon</div>
+    <div class="tab" onclick="sw('req')">Richieste</div>
+  </div>
+
+  <div class="main">
+
+    <!-- OVERVIEW -->
+    <div id="tab-ov" class="panel active">
+      <div class="alert"><span>⚠</span><div><strong>Sicurezza</strong> — Le password del file originale non sono state importate. Usa un password manager dedicato (Bitwarden Teams, 1Password).</div></div>
+      <div class="kpi-grid" id="kpi"></div>
+      <div class="ch-row" id="charts"></div>
+    </div>
+
+    <!-- DOTAZIONI -->
+    <div id="tab-dot" class="panel">
+      <div class="sh">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="st">Dotazioni personali</span>
+          <span class="cb" id="d-cnt">—</span>
+        </div>
+        <div class="ctrl">
+          <input type="text" id="d-q" placeholder="Cerca nominativo..." oninput="fDot()">
+          <select id="d-sede" onchange="fDot()"><option value="">Tutte le sedi</option></select>
+          <select id="d-stato" onchange="fDot()"><option value="">Stato</option><option>ON</option><option>OFF</option></select>
+          <select id="d-ph" onchange="fDot()"><option value="">Smartphone</option><option value="si">Con smartphone</option><option value="no">Senza</option></select>
+          <button class="btn btn-grn" onclick="addDot()">+ Aggiungi</button>
+          <button class="btn" onclick="expCSV(dotData,'dotazioni')">↓ CSV</button>
+        </div>
+      </div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th onclick="srt('dot','nominativo')">Nominativo ↕</th>
+          <th onclick="srt('dot','laptop')">Laptop ↕</th>
+          <th onclick="srt('dot','smartphone')">Smartphone ↕</th>
+          <th onclick="srt('dot','sede')">Sede ↕</th>
+          <th onclick="srt('dot','stato')">Stato ↕</th>
+          <th>Note</th>
+          <th style="width:44px"></th>
+        </tr></thead>
+        <tbody id="d-body"></tbody>
+      </table></div>
+    </div>
+
+    <!-- POSEIDON -->
+    <div id="tab-pos" class="panel">
+      <div class="sh">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="st">PC Poseidon — Storico</span>
+          <span class="cb" id="p-cnt">—</span>
+        </div>
+        <div class="ctrl">
+          <input type="text" id="p-q" placeholder="Cerca ID o risorsa..." oninput="fPos()">
+          <select id="p-st" onchange="fPos()"><option value="">Tutti gli stati</option><option>ATTIVO</option><option>CHIUSO</option></select>
+          <button class="btn btn-grn" onclick="addPos()">+ Aggiungi</button>
+          <button class="btn" onclick="expCSV(posData,'poseidon_pcs')">↓ CSV</button>
+        </div>
+      </div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>ID Dispositivo</th><th>Risorsa</th><th>Data Affidamento</th>
+          <th>Data Riconsegna</th><th>Modello</th><th>Stato</th><th>Note</th>
+          <th style="width:44px"></th>
+        </tr></thead>
+        <tbody id="p-body"></tbody>
+      </table></div>
+    </div>
+
+    <!-- RICHIESTE -->
+    <div id="tab-req" class="panel">
+      <div class="sh">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="st">Storico Richieste</span>
+          <span class="cb" id="r-cnt">—</span>
+        </div>
+        <div class="ctrl">
+          <input type="text" id="r-q" placeholder="Cerca beneficiario..." oninput="fReq()">
+          <button class="btn btn-grn" onclick="addReq()">+ Aggiungi</button>
+          <button class="btn" onclick="expCSV(reqData,'richieste_pc')">↓ CSV</button>
+        </div>
+      </div>
+      <div class="tw"><table>
+        <thead><tr>
+          <th>Richiedente</th><th>Beneficiario</th><th>Laptop</th><th>Data Richiesta</th>
+          <th style="width:44px"></th>
+        </tr></thead>
+        <tbody id="r-body"></tbody>
+      </table></div>
+    </div>
+
+  </div>
+</div><!-- /app -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL='https://plxsuxnaiyyobwrgriaa.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBseHN1eG5haXl5b2J3cmdyaWFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMjAzODEsImV4cCI6MjA5Mzc5NjM4MX0.NBtAt3SZ-blBmCc2GS8IZc4KWG9uorGVmcTBDZHx9P0';
+const sb=supabase.createClient(SB_URL,SB_KEY);
+
+let dotData=[],posData=[],reqData=[];
+let sorts={dot:{col:'nominativo',asc:true},pos:{col:'id_dispositivo',asc:true},req:{col:'data_richiesta',asc:false}};
+
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+async function initAuth(){
+  const{data:{session}}=await sb.auth.getSession();
+  if(session) showApp(session.user);
+  else showLogin();
+
+  sb.auth.onAuthStateChange((_,session)=>{
+    if(session) showApp(session.user);
+    else showLogin();
+  });
+}
+
+function showLogin(){
+  document.getElementById('login-page').style.display='flex';
+  document.getElementById('app').style.display='none';
+}
+
+function showApp(user){
+  document.getElementById('login-page').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('user-email').textContent='● '+user.email;
+  loadAll();
+}
+
+async function doLogin(){
+  const email=document.getElementById('login-email').value.trim();
+  const pwd=document.getElementById('login-pwd').value;
+  const btn=document.getElementById('login-btn');
+  const err=document.getElementById('login-err');
+  err.classList.remove('show');
+  if(!email||!pwd){err.textContent='Inserisci email e password.';err.classList.add('show');return;}
+  btn.disabled=true;btn.textContent='Accesso in corso...';
+  const{error}=await sb.auth.signInWithPassword({email,password:pwd});
+  btn.disabled=false;btn.textContent='Accedi';
+  if(error){err.textContent=error.message==='Invalid login credentials'?'Credenziali non valide.':error.message;err.classList.add('show');}
+}
+
+async function doLogout(){
+  await sb.auth.signOut();
+  dotData=[];posData=[];reqData=[];
+}
+
+// Enter key on login form
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&document.getElementById('login-page').style.display!=='none') doLogin();
+});
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+function toast(msg,type='ok'){
+  const t=document.getElementById('toast');
+  t.innerHTML=msg;t.className='toast show '+type;
+  clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',3000);
+}
+
+// ── STATUS ────────────────────────────────────────────────────────────────────
+function setStatus(ok){
+  const el=document.getElementById('db-status');
+  el.textContent=ok?'● Supabase connesso':'● Offline';
+  el.className='pill '+(ok?'pill-grn':'pill-red');
+}
+
+// ── LOAD ──────────────────────────────────────────────────────────────────────
+async function loadAll(){
+  try{
+    const[d,p,r]=await Promise.all([
+      sb.from('dotazioni').select('*').order('nominativo'),
+      sb.from('poseidon_pcs').select('*').order('id_dispositivo').order('data_affidamento'),
+      sb.from('richieste_pc').select('*').order('data_richiesta',{ascending:false})
+    ]);
+    if(d.error||p.error||r.error)throw(d.error||p.error||r.error);
+    dotData=d.data;posData=p.data;reqData=r.data;
+    setStatus(true);
+    document.getElementById('sync-info').textContent='Sync '+new Date().toLocaleTimeString('it-IT');
+    rebuildSede();
+    renderKPIs();renderCharts();
+    fDot();fPos();fReq();
+  }catch(e){setStatus(false);toast('Errore caricamento: '+e.message,'err');}
+}
+
+// ── SEDE FILTER ───────────────────────────────────────────────────────────────
+function rebuildSede(){
+  const sedi=[...new Set(dotData.map(d=>d.sede).filter(Boolean))].sort();
+  const sel=document.getElementById('d-sede');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">Tutte le sedi</option>'+sedi.map(s=>`<option>${s}</option>`).join('');
+  if(cur)sel.value=cur;
+}
+
+// ── KPI ───────────────────────────────────────────────────────────────────────
+function renderKPIs(){
+  const tot=dotData.length,on=dotData.filter(d=>d.stato==='ON').length,off=tot-on;
+  const ph=dotData.filter(d=>d.smartphone&&d.smartphone.trim()).length;
+  const pa=posData.filter(p=>p.stato_assegnazione==='ATTIVO').length;
+  const pids=[...new Set(posData.map(p=>p.id_dispositivo))].length;
+  const wn=dotData.filter(d=>d.note&&d.note.trim()).length;
+  document.getElementById('kpi').innerHTML=[
+    {l:'Totale Risorse',v:tot,s:'in database',c:'b'},
+    {l:'Attivi (ON)',v:on,s:tot?Math.round(on/tot*100)+'% del totale':'—',c:'g'},
+    {l:'Inattivi (OFF)',v:off,s:'da verificare',c:'r'},
+    {l:'Con Smartphone',v:ph,s:tot?Math.round(ph/tot*100)+'% copertura':'—',c:'t'},
+    {l:'PC Poseidon Attivi',v:pa,s:'su '+pids+' dispositivi',c:'a'},
+    {l:'Con Note/Alert',v:wn,s:'richiedono attenzione',c:'r'},
+  ].map(k=>`<div class="kpi ${k.c}"><div class="kpi-l">${k.l}</div><div class="kpi-v">${k.v}</div><div class="kpi-s">${k.s}</div></div>`).join('');
+}
+
+// ── CHARTS ────────────────────────────────────────────────────────────────────
+function renderCharts(){
+  const sedi=[...new Set(dotData.map(d=>d.sede).filter(Boolean))].sort();
+  const sc=sedi.map(s=>({s,n:dotData.filter(d=>d.sede===s).length}));
+  const mx=Math.max(...sc.map(x=>x.n),1);
+  const lm={};dotData.forEach(d=>{const k=(d.laptop||'').includes('Poseidon')?'Poseidon (custom)':(d.laptop||'—');lm[k]=(lm[k]||0)+1;});
+  const lp=Object.entries(lm).sort((a,b)=>b[1]-a[1]);
+  const ml=lp[0]?lp[0][1]:1;
+  document.getElementById('charts').innerHTML=`
+    <div class="ch-card"><div class="ch-t">Distribuzione per sede</div>${sc.map(x=>`<div class="bi"><div class="bl">${x.s}</div><div class="bt"><div class="bf" style="width:${Math.round(x.n/mx*100)}%;background:var(--acc)"></div></div><div class="bc">${x.n}</div></div>`).join('')}</div>
+    <div class="ch-card"><div class="ch-t">Laptop model breakdown</div>${lp.slice(0,7).map(([k,v])=>`<div class="bi"><div class="bl">${k}</div><div class="bt"><div class="bf" style="width:${Math.round(v/ml*100)}%;background:var(--tel)"></div></div><div class="bc">${v}</div></div>`).join('')}</div>
+    <div class="ch-card"><div class="ch-t">ON / OFF per sede</div>${sedi.map(s=>{const t=dotData.filter(d=>d.sede===s);const on=t.filter(d=>d.stato==='ON').length;return`<div class="bi"><div class="bl">${s}</div><div class="bt" style="display:flex"><div style="width:${t.length?Math.round(on/t.length*100):0}%;height:7px;background:var(--grn);border-radius:3px 0 0 3px"></div><div style="width:${t.length?Math.round((t.length-on)/t.length*100):0}%;height:7px;background:var(--red);border-radius:0 3px 3px 0"></div></div><div class="bc" style="font-size:9px;color:var(--mut)">${on}/${t.length}</div></div>`;}).join('')}</div>`;
+}
+
+// ── SORT ──────────────────────────────────────────────────────────────────────
+function srt(tbl,col){
+  const s=sorts[tbl];s.asc=s.col===col?!s.asc:true;s.col=col;
+  if(tbl==='dot')fDot();else if(tbl==='pos')fPos();else fReq();
+}
+
+// ── INLINE EDIT ───────────────────────────────────────────────────────────────
+function makeCell(value,id,field,table,renderFn){
+  const div=document.createElement('div');
+  div.className='cell';
+  div.innerHTML=renderFn?renderFn(value):escH(value||'');
+  div.title='Clicca per modificare';
+  div.onclick=()=>startEdit(div,value,id,field,table,renderFn);
+  return div;
+}
+
+function startEdit(div,oldVal,id,field,table,renderFn){
+  if(div.classList.contains('editing'))return;
+  div.classList.add('editing');div.innerHTML='';
+  let input;
+  if(field==='stato'&&table==='dotazioni'){
+    input=document.createElement('select');
+    ['ON','OFF'].forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;if(v===(oldVal||''))o.selected=true;input.appendChild(o);});
+  } else if(field==='stato_assegnazione'){
+    input=document.createElement('select');
+    ['ATTIVO','CHIUSO'].forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;if(v===(oldVal||''))o.selected=true;input.appendChild(o);});
+  } else {
+    input=document.createElement('input');input.type='text';input.value=oldVal||'';
+  }
+  input.style.minWidth='110px';
+  div.appendChild(input);input.focus();
+  if(input.tagName==='INPUT')input.select();
+
+  const save=async()=>{
+    const nv=input.value.trim();
+    div.classList.remove('editing');
+    div.innerHTML=renderFn?renderFn(nv):escH(nv);
+    if(nv===(oldVal||''))return;
+    div.innerHTML='<span class="saving"><span class="spin"></span></span>';
+    const{error}=await sb.from(table).update({[field]:nv,updated_at:new Date().toISOString()}).eq('id',id);
+    if(error){toast('Errore: '+error.message,'err');div.innerHTML=renderFn?renderFn(oldVal):escH(oldVal||'');}
+    else{
+      div.innerHTML=renderFn?renderFn(nv):escH(nv);
+      const arr=table==='dotazioni'?dotData:table==='poseidon_pcs'?posData:reqData;
+      const rec=arr.find(x=>x.id===id);if(rec)rec[field]=nv;
+      renderKPIs();renderCharts();
+      toast('✓ Salvato','ok');
+    }
+    div.onclick=()=>startEdit(div,nv,id,field,table,renderFn);
+  };
+  input.addEventListener('blur',save);
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter')input.blur();
+    if(e.key==='Escape'){div.classList.remove('editing');div.innerHTML=renderFn?renderFn(oldVal):escH(oldVal||'');div.onclick=()=>startEdit(div,oldVal,id,field,table,renderFn);}
+  });
+}
+
+function escH(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// ── BADGE HELPERS ─────────────────────────────────────────────────────────────
+const statoBdg=v=>`<span class="bdg b-${(v||'').toLowerCase()}">${v||'—'}</span>`;
+const laptopBdg=v=>!v||v==='—'?`<span style="color:var(--mut)">—</span>`:v.includes('Poseidon')?`<span class="bdg b-pos">${v}</span>`:`<span class="bdg b-len">${v}</span>`;
+const phoneBdg=v=>v?`<span class="bdg b-phn">${v}</span>`:`<span style="color:var(--mut)">—</span>`;
+const sedeBdg=v=>`<span class="bdg b-sed">${v||'—'}</span>`;
+const posStatoBdg=v=>`<span class="bdg b-${v==='ATTIVO'?'att':'chi'}">${v||'—'}</span>`;
+const noteBdg=v=>v?`<span class="nc"><span class="wd"></span>${escH(v)}</span>`:'';
+const mutedSpan=v=>`<span style="color:var(--mut);font-size:11px">${escH(v||'—')}</span>`;
+const dateSpan=v=>v?`<span style="color:var(--mut)">${fmtDate(v)}</span>`:`<span style="color:var(--mut)">—</span>`;
+const inCorso=v=>v?`<span style="color:var(--mut)">${fmtDate(v)}</span>`:`<span style="color:var(--grn);font-size:11px">In corso</span>`;
+
+// ── DELETE ────────────────────────────────────────────────────────────────────
+async function delRow(table,id){
+  if(!confirm('Eliminare questo record?'))return;
+  const{error}=await sb.from(table).delete().eq('id',id);
+  if(error){toast('Errore: '+error.message,'err');return;}
+  toast('🗑 Eliminato','ok');
+  await loadAll();
+}
+
+// ── ADD ───────────────────────────────────────────────────────────────────────
+async function addDot(){
+  const{data,error}=await sb.from('dotazioni').insert({nominativo:'Nuovo',laptop:'',smartphone:'',sede:'Catania',stato:'ON',note:''}).select().single();
+  if(error){toast('Errore: '+error.message,'err');return;}
+  dotData.unshift(data);fDot();toast('✓ Riga aggiunta — clicca per modificare','inf');
+}
+async function addPos(){
+  const{data,error}=await sb.from('poseidon_pcs').insert({id_dispositivo:'Poseidon_NEW',risorsa:'',modello:'',stato_assegnazione:'ATTIVO',note:''}).select().single();
+  if(error){toast('Errore: '+error.message,'err');return;}
+  posData.unshift(data);fPos();toast('✓ Riga aggiunta','inf');
+}
+async function addReq(){
+  const{data,error}=await sb.from('richieste_pc').insert({richiedente:'',beneficiario:'Nuovo',laptop:'',data_richiesta:new Date().toISOString().split('T')[0]}).select().single();
+  if(error){toast('Errore: '+error.message,'err');return;}
+  reqData.unshift(data);fReq();toast('✓ Riga aggiunta','inf');
+}
+
+// ── FILTER & RENDER ───────────────────────────────────────────────────────────
+function fDot(){
+  const q=(document.getElementById('d-q').value||'').toLowerCase();
+  const sede=document.getElementById('d-sede').value;
+  const stato=document.getElementById('d-stato').value;
+  const ph=document.getElementById('d-ph').value;
+  let data=dotData.filter(d=>{
+    if(q&&!(d.nominativo||'').toLowerCase().includes(q))return false;
+    if(sede&&d.sede!==sede)return false;
+    if(stato&&d.stato!==stato)return false;
+    if(ph==='si'&&(!d.smartphone||!d.smartphone.trim()))return false;
+    if(ph==='no'&&d.smartphone&&d.smartphone.trim())return false;
+    return true;
+  });
+  const s=sorts.dot;
+  data.sort((a,b)=>{const va=(a[s.col]||'').toLowerCase(),vb=(b[s.col]||'').toLowerCase();return s.asc?(va>vb?1:-1):(va<vb?1:-1);});
+  document.getElementById('d-cnt').textContent=data.length+' risultati';
+  const tb=document.getElementById('d-body');tb.innerHTML='';
+  data.forEach(d=>{
+    const tr=document.createElement('tr');
+    [makeCell(d.nominativo,d.id,'nominativo','dotazioni'),
+     makeCell(d.laptop,d.id,'laptop','dotazioni',laptopBdg),
+     makeCell(d.smartphone,d.id,'smartphone','dotazioni',phoneBdg),
+     makeCell(d.sede,d.id,'sede','dotazioni',sedeBdg),
+     makeCell(d.stato,d.id,'stato','dotazioni',statoBdg),
+     makeCell(d.note,d.id,'note','dotazioni',noteBdg)
+    ].forEach(c=>{const td=document.createElement('td');td.appendChild(c);tr.appendChild(td);});
+    const act=document.createElement('td');
+    act.innerHTML=`<div class="cell-actions"><button class="icon-btn del" onclick="delRow('dotazioni','${d.id}')" title="Elimina">✕</button></div>`;
+    tr.appendChild(act);tb.appendChild(tr);
+  });
+}
+
+function fPos(){
+  const q=(document.getElementById('p-q').value||'').toLowerCase();
+  const st=document.getElementById('p-st').value;
+  let data=posData.filter(p=>{
+    if(q&&!(p.id_dispositivo||'').toLowerCase().includes(q)&&!(p.risorsa||'').toLowerCase().includes(q))return false;
+    if(st&&p.stato_assegnazione!==st)return false;
+    return true;
+  });
+  document.getElementById('p-cnt').textContent=data.length+' record';
+  const tb=document.getElementById('p-body');tb.innerHTML='';
+  data.forEach(p=>{
+    const tr=document.createElement('tr');
+    [makeCell(p.id_dispositivo,p.id,'id_dispositivo','poseidon_pcs',v=>`<span class="bdg b-pos">${escH(v||'')}</span>`),
+     makeCell(p.risorsa,p.id,'risorsa','poseidon_pcs'),
+     makeCell(p.data_affidamento,p.id,'data_affidamento','poseidon_pcs',dateSpan),
+     makeCell(p.data_riconsegna,p.id,'data_riconsegna','poseidon_pcs',inCorso),
+     makeCell(p.modello,p.id,'modello','poseidon_pcs',mutedSpan),
+     makeCell(p.stato_assegnazione,p.id,'stato_assegnazione','poseidon_pcs',posStatoBdg),
+     makeCell(p.note,p.id,'note','poseidon_pcs',noteBdg)
+    ].forEach(c=>{const td=document.createElement('td');td.appendChild(c);tr.appendChild(td);});
+    const act=document.createElement('td');
+    act.innerHTML=`<div class="cell-actions"><button class="icon-btn del" onclick="delRow('poseidon_pcs','${p.id}')" title="Elimina">✕</button></div>`;
+    tr.appendChild(act);tb.appendChild(tr);
+  });
+}
+
+function fReq(){
+  const q=(document.getElementById('r-q').value||'').toLowerCase();
+  let data=reqData.filter(r=>!q||(r.beneficiario||'').toLowerCase().includes(q)||(r.richiedente||'').toLowerCase().includes(q));
+  document.getElementById('r-cnt').textContent=data.length+' richieste';
+  const tb=document.getElementById('r-body');tb.innerHTML='';
+  data.forEach(r=>{
+    const tr=document.createElement('tr');
+    [makeCell(r.richiedente,r.id,'richiedente','richieste_pc',v=>`<span style="color:var(--mut)">${escH(v||'—')}</span>`),
+     makeCell(r.beneficiario,r.id,'beneficiario','richieste_pc'),
+     makeCell(r.laptop,r.id,'laptop','richieste_pc',laptopBdg),
+     makeCell(r.data_richiesta,r.id,'data_richiesta','richieste_pc',dateSpan)
+    ].forEach(c=>{const td=document.createElement('td');td.appendChild(c);tr.appendChild(td);});
+    const act=document.createElement('td');
+    act.innerHTML=`<div class="cell-actions"><button class="icon-btn del" onclick="delRow('richieste_pc','${r.id}')" title="Elimina">✕</button></div>`;
+    tr.appendChild(act);tb.appendChild(tr);
+  });
+}
+
+// ── DATE ──────────────────────────────────────────────────────────────────────
+function fmtDate(v){if(!v)return'—';try{return new Date(v).toLocaleDateString('it-IT');}catch{return v;}}
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+function sw(t){
+  const ts=['ov','dot','pos','req'];
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',ts[i]===t));
+  document.querySelectorAll('.panel').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+t).classList.add('active');
+}
+
+// ── XLSX IMPORT ───────────────────────────────────────────────────────────────
+document.getElementById('xlsx-fi').addEventListener('change',async e=>{
+  const file=e.target.files[0];if(!file)return;
+  toast('<span class="spin"></span> Importazione...','inf');
+  const r=new FileReader();
+  r.onload=async ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const dsn=wb.SheetNames.find(s=>s.toLowerCase().includes('aggiornata'))||wb.SheetNames[0];
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[dsn],{defval:''});
+      const c=v=>(v===undefined||v===null||String(v).trim()==='0'||String(v).trim()==='')?'':String(v).trim();
+      const known=['Nominativo Risorsa','Nominativo','Laptop','Smartphone','Sede','Stato'];
+      const newD=rows.filter(row=>c(row['Nominativo Risorsa']||row['Nominativo'])).map(row=>({
+        nominativo:c(row['Nominativo Risorsa']||row['Nominativo']),
+        laptop:c(row['Laptop']),smartphone:c(row['Smartphone']),
+        sede:c(row['Sede']),
+        stato:(c(row['Stato'])||'ON').toUpperCase(),
+        note:Object.entries(row).filter(([k])=>!known.includes(k)).map(([,v])=>c(v)).filter(Boolean).join(' | ')
+      }));
+      if(newD.length){
+        await sb.from('dotazioni').delete().neq('id','00000000-0000-0000-0000-000000000000');
+        await sb.from('dotazioni').insert(newD);
+        toast('✓ '+newD.length+' dotazioni importate','ok');
+        await loadAll();
+      }
+    }catch(err){toast('Errore import: '+err.message,'err');}
+  };
+  r.readAsArrayBuffer(file);
+  e.target.value='';
+});
+
+// ── CSV EXPORT ────────────────────────────────────────────────────────────────
+function expCSV(data,name){
+  if(!data.length)return;
+  const cols=Object.keys(data[0]).filter(k=>k!=='id'&&k!=='updated_at');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent([cols.join(','),...data.map(r=>cols.map(c=>`"${(r[c]||'').toString().replace(/"/g,'""')}"`).join(','))].join('\n'));
+  a.download=name+'_'+new Date().toLocaleDateString('it-IT').replace(/\//g,'-')+'.csv';
+  a.click();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+initAuth();
+</script>
+</body>
+</html>
