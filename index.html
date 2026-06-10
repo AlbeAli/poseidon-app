@@ -288,8 +288,8 @@ tbody td{padding:0;vertical-align:middle;}
       <span class="user-pill" id="user-email"></span>
       <span style="color:var(--mut);font-size:10px;" id="sync-info"></span>
       <label class="btn imp-btn" title="Importa xlsx">
-        ⬆ Importa xlsx
-        <input type="file" id="xlsx-fi" accept=".xlsx,.xls">
+        ⬆ Importa xlsx / csv
+        <input type="file" id="xlsx-fi" accept=".xlsx,.xls,.csv">
       </label>
       <button class="logout-btn" onclick="doLogout()">Esci →</button>
     </div>
@@ -869,198 +869,207 @@ async function syncTable(table, fileMap, dbKeyField){
   return{ins:toInsert.length,upd:toUpdate.length,del:toDelete.length};
 }
 
-// ── XLSX IMPORT — sync intelligente su tutti e 3 i fogli ─────────────────────
+// ── IMPORT: XLSX + CSV ────────────────────────────────────────────────────────
+
+// Rileva la tabella di destinazione dalle intestazioni del CSV
+function detectTableFromHeaders(headers){
+  const h=headers.map(x=>(x||'').toString().toLowerCase().trim());
+  if(h.some(x=>x.includes('nominativo')))                                    return 'dotazioni';
+  if(h.some(x=>x.includes('id dispositivo')||x.includes('id_dispositivo')))  return 'poseidon';
+  if(h.some(x=>x==='mobile'))                                                 return 'mobile';
+  if(h.some(x=>x.includes('riconsegn')||x.includes('motivo')||x.includes('dove'))) return 'riconsegna';
+  if(h.some(x=>x.includes('beneficiario'))&&h.some(x=>x.includes('laptop'))) return 'richieste_pc';
+  if(h.some(x=>x.includes('beneficiario')))                                   return 'richieste_mobile';
+  return null;
+}
+
+// Esegue sync su una singola tabella dato un workbook sheet
+async function syncSheet(sheetName, rows, ts){
+  const results={};
+  const known_dot=['Nominativo Risorsa','Nominativo','Laptop','Smartphone','Sede','Stato'];
+
+  // ── DOTAZIONI ──────────────────────────────────────────────────────────────
+  if(sheetName==='dotazioni'){
+    const m=new Map();
+    rows.forEach(row=>{
+      const nome=cv(row['Nominativo Risorsa']||row['Nominativo']);if(!nome)return;
+      m.set(nome,{nominativo:nome,laptop:cv(row['Laptop']),smartphone:cv(row['Smartphone']),
+        sede:cv(row['Sede']),stato:(cv(row['Stato'])||'ON').toUpperCase(),
+        note:Object.entries(row).filter(([k])=>!known_dot.includes(k)).map(([,v])=>cv(v)).filter(Boolean).join(' | ')});
+    });
+    if(m.size) results.dot=await syncTable('dotazioni',m,'nominativo');
+  }
+
+  // ── PC POSEIDON ────────────────────────────────────────────────────────────
+  if(sheetName==='poseidon'){
+    const m=new Map();
+    rows.forEach(row=>{
+      const id=cv(row['ID dispositivo']||row['id_dispositivo']);const risorsa=cv(row['Risorsa']);
+      const da=toISODate(row['Data Affidamento']||row['data_affidamento']);
+      if(!id||!risorsa)return;
+      m.set(`${id}|${risorsa}|${da||''}`,{
+        id_dispositivo:id,risorsa,data_affidamento:da,
+        data_riconsegna:toISODate(row['Data Riconsegna']||row['data_riconsegna'])||null,
+        modello:cv(row['Dettagli Macchina']||row['modello']),
+        stato_assegnazione:(cv(row['Stato Assegnazione']||row['stato_assegnazione'])||'ATTIVO').toUpperCase(),
+        note:[cv(row['Dettagli Ordine']),cv(row['Aggiornamenti']),cv(row['note'])].filter(Boolean).join(' — ')
+      });
+    });
+    if(m.size){
+      const{data:db,error:e}=await sb.from('poseidon_pcs').select('id,id_dispositivo,risorsa,data_affidamento');
+      if(e)throw e;
+      const dbm=new Map(db.map(r=>[`${r.id_dispositivo}|${r.risorsa}|${r.data_affidamento||''}`,r.id]));
+      const ti=[],tu=[],td=[];
+      m.forEach((d,k)=>{ dbm.has(k)?tu.push({id:dbm.get(k),...d,updated_at:ts}):ti.push(d); });
+      dbm.forEach((_,k)=>{ if(!m.has(k))td.push(dbm.get(k)); });
+      const ops=[];
+      if(tu.length)ops.push(sb.from('poseidon_pcs').upsert(tu,{onConflict:'id'}));
+      if(ti.length)ops.push(sb.from('poseidon_pcs').insert(ti));
+      if(td.length)ops.push(sb.from('poseidon_pcs').delete().in('id',td));
+      if(ops.length){const res=await Promise.all(ops);const errs=res.filter(r=>r.error).map(r=>r.error.message);if(errs.length)throw new Error(errs.join(', '));}
+      results.pos={ins:ti.length,upd:tu.length,del:td.length};
+    }
+  }
+
+  // ── RICHIESTE PC ───────────────────────────────────────────────────────────
+  if(sheetName==='richieste_pc'){
+    const m=new Map();
+    rows.forEach(row=>{
+      const ben=cv(row['Beneficiario']||row['beneficiario']);if(!ben)return;
+      const d=toISODate(row['Data Richiesta']||row['data_richiesta']);
+      m.set(`${ben}|${d||''}`,{richiedente:cv(row['Richiedente']||row['richiedente']),beneficiario:ben,
+        laptop:cv(row['Laptop']||row['laptop'])||'—',data_richiesta:d});
+    });
+    if(m.size){
+      const{data:db,error:e}=await sb.from('richieste_pc').select('id,beneficiario,data_richiesta');if(e)throw e;
+      const dbm=new Map(db.map(r=>[`${r.beneficiario}|${r.data_richiesta||''}`,r.id]));
+      const ti=[],tu=[],td=[];
+      m.forEach((d,k)=>{ dbm.has(k)?tu.push({id:dbm.get(k),...d,updated_at:ts}):ti.push(d); });
+      dbm.forEach((_,k)=>{ if(!m.has(k))td.push(dbm.get(k)); });
+      const ops=[];
+      if(tu.length)ops.push(sb.from('richieste_pc').upsert(tu,{onConflict:'id'}));
+      if(ti.length)ops.push(sb.from('richieste_pc').insert(ti));
+      if(td.length)ops.push(sb.from('richieste_pc').delete().in('id',td));
+      if(ops.length){const res=await Promise.all(ops);const errs=res.filter(r=>r.error).map(r=>r.error.message);if(errs.length)throw new Error(errs.join(', '));}
+      results.req={ins:ti.length,upd:tu.length,del:td.length};
+    }
+  }
+
+  // ── RICHIESTE MOBILE ───────────────────────────────────────────────────────
+  if(sheetName==='mobile'){
+    const m=new Map();
+    rows.forEach(row=>{
+      const ben=cv(row['Beneficiario']||row['beneficiario']);if(!ben)return;
+      const d=toISODate(row['Data Richiesta']||row['data_richiesta']);
+      m.set(`${ben}|${d||''}`,{richiedente:cv(row['Richiedente']||row['richiedente']),
+        beneficiario:ben,mobile:cv(row['Mobile']||row['mobile']),data_richiesta:d});
+    });
+    if(m.size) results.mob=await syncTable('richieste_mobile',m,'beneficiario');
+  }
+
+  // ── RICONSEGNA ─────────────────────────────────────────────────────────────
+  if(sheetName==='riconsegna'){
+    const m=new Map();
+    rows.forEach(row=>{
+      const risorsa=cv(row['Risorsa']||row['risorsa']);if(!risorsa)return;
+      const dc=toISODate(row['Data Consegna']||row['data_consegna']);
+      const disp=cv(row['Dispositivo']||row['dispositivo']);
+      m.set(`${risorsa}|${disp}|${dc||''}`,{
+        risorsa,dispositivo:disp,motivo:cv(row['Motivo']||row['motivo']),
+        data_consegna:dc,riconsegnato_da:cv(row['Riconsegnato da']||row['riconsegnato_da']),
+        dove:cv(row['Dove']||row['dove']),
+        note:cv(row['Note / Seriale']||row['Note']||row['note']||
+          [cv(row[Object.keys(row)[6]]),cv(row[Object.keys(row)[7]])].filter(Boolean).join(' '))
+      });
+    });
+    if(m.size){
+      const{data:db,error:e}=await sb.from('riconsegna_dispositivi').select('id,risorsa,dispositivo,data_consegna');if(e)throw e;
+      const dbm=new Map(db.map(r=>[`${r.risorsa}|${r.dispositivo||''}|${r.data_consegna||''}`,r.id]));
+      const ti=[],tu=[],td=[];
+      m.forEach((d,k)=>{ dbm.has(k)?tu.push({id:dbm.get(k),...d,updated_at:ts}):ti.push(d); });
+      dbm.forEach((_,k)=>{ if(!m.has(k))td.push(dbm.get(k)); });
+      const ops=[];
+      if(tu.length)ops.push(sb.from('riconsegna_dispositivi').upsert(tu,{onConflict:'id'}));
+      if(ti.length)ops.push(sb.from('riconsegna_dispositivi').insert(ti));
+      if(td.length)ops.push(sb.from('riconsegna_dispositivi').delete().in('id',td));
+      if(ops.length){const res=await Promise.all(ops);const errs=res.filter(r=>r.error).map(r=>r.error.message);if(errs.length)throw new Error(errs.join(', '));}
+      results.ric={ins:ti.length,upd:tu.length,del:td.length};
+    }
+  }
+  return results;
+}
+
 document.getElementById('xlsx-fi').addEventListener('change',async e=>{
   const file=e.target.files[0];if(!file)return;
+  const isCSV=file.name.toLowerCase().endsWith('.csv');
   toast('<span class="spin"></span> Analisi file...','inf');
   const r=new FileReader();
+
   r.onload=async ev=>{
     try{
-      const wb=XLSX.read(ev.target.result,{type:'array'});
       const ts=new Date().toISOString();
-      const results={dot:null,pos:null,req:null,mob:null,ric:null};
+      let allResults={dot:null,pos:null,req:null,mob:null,ric:null};
 
-      // ── 1. DOTAZIONI (chiave: nominativo) ──────────────────────────────────
-      const dsn=wb.SheetNames.find(s=>s.toLowerCase().includes('aggiornata'))||wb.SheetNames[0];
-      if(dsn){
-        const known=['Nominativo Risorsa','Nominativo','Laptop','Smartphone','Sede','Stato'];
-        const dotMap=new Map();
-        XLSX.utils.sheet_to_json(wb.Sheets[dsn],{defval:''}).forEach(row=>{
-          const nome=cv(row['Nominativo Risorsa']||row['Nominativo']);
-          if(!nome)return;
-          dotMap.set(nome,{
-            nominativo:nome,
-            laptop:cv(row['Laptop']),
-            smartphone:cv(row['Smartphone']),
-            sede:cv(row['Sede']),
-            stato:(cv(row['Stato'])||'ON').toUpperCase(),
-            note:Object.entries(row).filter(([k])=>!known.includes(k)).map(([,v])=>cv(v)).filter(Boolean).join(' | ')
-          });
-        });
-        if(dotMap.size) results.dot=await syncTable('dotazioni',dotMap,'nominativo');
-      }
+      if(isCSV){
+        // ── CSV: rileva separatore (, o ;) dalle prime righe, poi parse ───────
+        const firstLine=(ev.target.result.split('\n')[0]||'');
+        const commas=(firstLine.match(/,/g)||[]).length;
+        const semis=(firstLine.match(/;/g)||[]).length;
+        const sep=semis>commas?';':',';
 
-      // ── 2. PC POSEIDON (chiave: id_dispositivo|risorsa|data_affidamento) ───
-      const psn=wb.SheetNames.find(s=>s.toLowerCase().includes('poseidon'));
-      if(psn){
-        const posMap=new Map();
-        XLSX.utils.sheet_to_json(wb.Sheets[psn],{defval:''}).forEach(row=>{
-          const id=cv(row['ID dispositivo']);
-          const risorsa=cv(row['Risorsa']);
-          const da=toISODate(row['Data Affidamento']);
-          if(!id||!risorsa)return;
-          const key=`${id}|${risorsa}|${da||''}`;
-          posMap.set(key,{
-            id_dispositivo:id,
-            risorsa,
-            data_affidamento:da,
-            data_riconsegna:toISODate(row['Data Riconsegna'])||null,
-            modello:cv(row['Dettagli Macchina']),
-            stato_assegnazione:(cv(row['Stato Assegnazione'])||'ATTIVO').toUpperCase(),
-            note:[cv(row['Dettagli Ordine']),cv(row['Aggiornamenti'])].filter(Boolean).join(' — ')
-            // Pwd ignorata intenzionalmente
-          });
-        });
-        if(posMap.size){
-          // Per poseidon la chiave composita non è una singola colonna DB —
-          // recuperiamo tutti e confrontiamo su chiave calcolata
-          const{data:dbPos,error:pe}=await sb.from('poseidon_pcs')
-            .select('id,id_dispositivo,risorsa,data_affidamento');
-          if(pe)throw pe;
-          const dbPosMap=new Map(dbPos.map(r=>[`${r.id_dispositivo}|${r.risorsa}|${r.data_affidamento||''}`,r.id]));
-          const toIns=[],toUpd=[],toDel=[];
-          posMap.forEach((data,key)=>{
-            if(dbPosMap.has(key)) toUpd.push({id:dbPosMap.get(key),...data,updated_at:ts});
-            else toIns.push(data);
-          });
-          dbPosMap.forEach((_,key)=>{ if(!posMap.has(key)) toDel.push(dbPosMap.get(key)); });
-          const ops=[];
-          if(toUpd.length) ops.push(sb.from('poseidon_pcs').upsert(toUpd,{onConflict:'id'}));
-          if(toIns.length) ops.push(sb.from('poseidon_pcs').insert(toIns));
-          if(toDel.length) ops.push(sb.from('poseidon_pcs').delete().in('id',toDel));
-          if(ops.length){
-            const res=await Promise.all(ops);
-            const errs=res.filter(r=>r.error).map(r=>r.error.message);
-            if(errs.length)throw new Error(errs.join(', '));
-          }
-          results.pos={ins:toIns.length,upd:toUpd.length,del:toDel.length};
+        const wb=XLSX.read(ev.target.result,{type:'string',raw:false,FS:sep});
+        const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+        if(!rows.length){toast('CSV vuoto','err');return;}
+
+        const tableKey=detectTableFromHeaders(Object.keys(rows[0]));
+        if(!tableKey){
+          toast('CSV non riconosciuto — intestazioni non corrispondono a nessuna tabella','err');
+          console.table(Object.keys(rows[0]));
+          return;
         }
-      }
+        const partial=await syncSheet(tableKey,rows,ts);
+        Object.assign(allResults,partial);
 
-      // ── 3. RICHIESTE PC (chiave: beneficiario|data_richiesta) ──────────────
-      const rsn=wb.SheetNames.find(s=>s.toLowerCase().includes('richiest'));
-      if(rsn){
-        const reqMap=new Map();
-        XLSX.utils.sheet_to_json(wb.Sheets[rsn],{defval:''}).forEach(row=>{
-          const ben=cv(row['Beneficiario']);
-          const data=toISODate(row['Data Richiesta']);
-          if(!ben)return;
-          const key=`${ben}|${data||''}`;
-          reqMap.set(key,{
-            richiedente:cv(row['Richiedente']),
-            beneficiario:ben,
-            laptop:cv(row['Laptop'])||'—',
-            data_richiesta:data
-          });
-        });
-        if(reqMap.size){
-          const{data:dbReq,error:re}=await sb.from('richieste_pc')
-            .select('id,beneficiario,data_richiesta');
-          if(re)throw re;
-          const dbReqMap=new Map(dbReq.map(r=>[`${r.beneficiario}|${r.data_richiesta||''}`,r.id]));
-          const toIns=[],toUpd=[],toDel=[];
-          reqMap.forEach((data,key)=>{
-            if(dbReqMap.has(key)) toUpd.push({id:dbReqMap.get(key),...data,updated_at:ts});
-            else toIns.push(data);
-          });
-          dbReqMap.forEach((_,key)=>{ if(!reqMap.has(key)) toDel.push(dbReqMap.get(key)); });
-          const ops=[];
-          if(toUpd.length) ops.push(sb.from('richieste_pc').upsert(toUpd,{onConflict:'id'}));
-          if(toIns.length) ops.push(sb.from('richieste_pc').insert(toIns));
-          if(toDel.length) ops.push(sb.from('richieste_pc').delete().in('id',toDel));
-          if(ops.length){
-            const res=await Promise.all(ops);
-            const errs=res.filter(r=>r.error).map(r=>r.error.message);
-            if(errs.length)throw new Error(errs.join(', '));
-          }
-          results.req={ins:toIns.length,upd:toUpd.length,del:toDel.length};
+        const tableNames={dotazioni:'Dotazioni',poseidon:'PC Poseidon',
+          richieste_pc:'Richieste PC',mobile:'Richieste Mobile',riconsegna:'Riconsegna'};
+        toast(`✓ CSV importato su <b>${tableNames[tableKey]}</b> `+
+          `<span style="opacity:.6">[sep: "${sep}"]</span> — `+
+          Object.values(partial).filter(Boolean).map(r=>`+${r.ins} ~${r.upd} -${r.del}`).join(''),'ok');
+
+      } else {
+        // ── XLSX: tutti i fogli in parallelo ──────────────────────────────────
+        const wb=XLSX.read(ev.target.result,{type:'array'});
+
+        const dsn=wb.SheetNames.find(s=>s.toLowerCase().includes('aggiornata'))||wb.SheetNames[0];
+        if(dsn){
+          const rows=XLSX.utils.sheet_to_json(wb.Sheets[dsn],{defval:''});
+          const p=await syncSheet('dotazioni',rows,ts);Object.assign(allResults,p);
         }
+        const psn=wb.SheetNames.find(s=>s.toLowerCase().includes('poseidon'));
+        if(psn){const rows=XLSX.utils.sheet_to_json(wb.Sheets[psn],{defval:''});const p=await syncSheet('poseidon',rows,ts);Object.assign(allResults,p);}
+        const rsn=wb.SheetNames.find(s=>s.toLowerCase().includes('richiest')&&!s.toLowerCase().includes('mobile'));
+        if(rsn){const rows=XLSX.utils.sheet_to_json(wb.Sheets[rsn],{defval:''});const p=await syncSheet('richieste_pc',rows,ts);Object.assign(allResults,p);}
+        const msn=wb.SheetNames.find(s=>s.toLowerCase().includes('mobile'));
+        if(msn){const rows=XLSX.utils.sheet_to_json(wb.Sheets[msn],{defval:''});const p=await syncSheet('mobile',rows,ts);Object.assign(allResults,p);}
+        const rcsn=wb.SheetNames.find(s=>s.toLowerCase().includes('riconsegna'));
+        if(rcsn){const rows=XLSX.utils.sheet_to_json(wb.Sheets[rcsn],{defval:''});const p=await syncSheet('riconsegna',rows,ts);Object.assign(allResults,p);}
+
+        const fmt=(label,r)=>r?
+          `<b>${label}</b> <span style="color:var(--grn)">+${r.ins}</span> `+
+          `<span style="color:var(--acc)">~${r.upd}</span> `+
+          `<span style="color:var(--red)">-${r.del}</span>`:`<b>${label}</b> <span style="color:var(--mut)">—</span>`;
+        toast(`✓ Sync &nbsp;|&nbsp; `+fmt('Dotazioni',allResults.dot)+` &nbsp;|&nbsp; `+
+          fmt('Poseidon',allResults.pos)+` &nbsp;|&nbsp; `+fmt('Richieste PC',allResults.req)+
+          ` &nbsp;|&nbsp; `+fmt('Mobile',allResults.mob)+` &nbsp;|&nbsp; `+fmt('Riconsegna',allResults.ric),'ok');
       }
 
-      // ── 4. RICHIESTE MOBILE (chiave: beneficiario|data_richiesta) ──────────
-      const msn=wb.SheetNames.find(s=>s.toLowerCase().includes('mobile'));
-      if(msn){
-        const mobMap=new Map();
-        XLSX.utils.sheet_to_json(wb.Sheets[msn],{defval:''}).forEach(row=>{
-          const ben=cv(row['Beneficiario']);if(!ben)return;
-          const data=toISODate(row['Data Richiesta']);
-          const key=`${ben}|${data||''}`;
-          mobMap.set(key,{richiedente:cv(row['Richiedente']),beneficiario:ben,mobile:cv(row['Mobile']),data_richiesta:data});
-        });
-        if(mobMap.size) results.mob=await syncTable('richieste_mobile',mobMap,'beneficiario');
-      }
-
-      // ── 5. RICONSEGNA DISPOSITIVI (chiave: risorsa|dispositivo|data_consegna) ─
-      const rcsn=wb.SheetNames.find(s=>s.toLowerCase().includes('riconsegna'));
-      if(rcsn){
-        const ricMap=new Map();
-        XLSX.utils.sheet_to_json(wb.Sheets[rcsn],{defval:''}).forEach(row=>{
-          const risorsa=cv(row['Risorsa']);if(!risorsa)return;
-          const dc=toISODate(row['Data Consegna']);
-          const disp=cv(row['Dispositivo']);
-          const key=`${risorsa}|${disp}|${dc||''}`;
-          ricMap.set(key,{
-            risorsa,dispositivo:disp,motivo:cv(row['Motivo']),
-            data_consegna:dc,riconsegnato_da:cv(row['Riconsegnato da']),
-            dove:cv(row['Dove']),
-            note:[cv(row[Object.keys(row)[6]]),cv(row[Object.keys(row)[7]])].filter(Boolean).join(' ')
-          });
-        });
-        if(ricMap.size){
-          const{data:dbRic,error:rce}=await sb.from('riconsegna_dispositivi')
-            .select('id,risorsa,dispositivo,data_consegna');
-          if(rce)throw rce;
-          const dbRicMap=new Map(dbRic.map(r=>[`${r.risorsa}|${r.dispositivo||''}|${r.data_consegna||''}`,r.id]));
-          const toIns=[],toUpd=[],toDel=[];
-          ricMap.forEach((data,key)=>{
-            if(dbRicMap.has(key)) toUpd.push({id:dbRicMap.get(key),...data,updated_at:ts});
-            else toIns.push(data);
-          });
-          dbRicMap.forEach((_,key)=>{ if(!ricMap.has(key)) toDel.push(dbRicMap.get(key)); });
-          const ops=[];
-          if(toUpd.length) ops.push(sb.from('riconsegna_dispositivi').upsert(toUpd,{onConflict:'id'}));
-          if(toIns.length) ops.push(sb.from('riconsegna_dispositivi').insert(toIns));
-          if(toDel.length) ops.push(sb.from('riconsegna_dispositivi').delete().in('id',toDel));
-          if(ops.length){
-            const res=await Promise.all(ops);
-            const errs=res.filter(r=>r.error).map(r=>r.error.message);
-            if(errs.length)throw new Error(errs.join(', '));
-          }
-          results.ric={ins:toIns.length,upd:toUpd.length,del:toDel.length};
-        }
-      }
-
-
-      const fmt=(label,r)=>r?
-        `<b>${label}</b> `+
-        `<span style="color:var(--grn)">+${r.ins}</span> `+
-        `<span style="color:var(--acc2)">~${r.upd}</span> `+
-        `<span style="color:var(--red)">-${r.del}</span>`:
-        `<b>${label}</b> <span style="color:var(--mut)">—</span>`;
-
-      toast(
-        `✓ Sync &nbsp;|&nbsp; `+
-        fmt('Dotazioni',results.dot)+` &nbsp;|&nbsp; `+
-        fmt('Poseidon',results.pos)+` &nbsp;|&nbsp; `+
-        fmt('Richieste PC',results.req)+` &nbsp;|&nbsp; `+
-        fmt('Mobile',results.mob)+` &nbsp;|&nbsp; `+
-        fmt('Riconsegna',results.ric),
-        'ok'
-      );
+      await loadAll();
 
     }catch(err){toast('Errore import: '+err.message,'err');console.error(err);}
   };
-  r.readAsArrayBuffer(file);
+
+  // CSV → leggi come testo; XLSX → leggi come ArrayBuffer
+  isCSV ? r.readAsText(file,'UTF-8') : r.readAsArrayBuffer(file);
   e.target.value='';
 });
 
