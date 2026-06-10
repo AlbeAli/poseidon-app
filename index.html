@@ -170,8 +170,9 @@ select option{background:var(--sur);}
   transition:all .15s;
 }
 .btn:hover{background:var(--sur2);border-color:var(--acc);color:var(--acc);}
-.btn-grn{background:#F0FDF4;border-color:#86EFAC;color:var(--grn);}
-.btn-grn:hover{background:#DCFCE7;border-color:var(--grn);}
+.btn-rst{background:transparent;border:1.5px solid var(--brd);color:var(--brd2);padding:6px 11px;border-radius:7px;cursor:pointer;font-family:var(--f);font-size:11px;font-weight:500;transition:all .15s;display:none;}
+.btn-rst.active{display:inline-flex;align-items:center;gap:4px;border-color:var(--amb);color:var(--amb);}
+.btn-rst.active:hover{background:#FFFBEB;border-color:#D97706;}
 
 /* ── TABLE ───────────────────────────────────────────────────────────────── */
 .tw{overflow-x:auto;border:1px solid var(--brd);border-radius:10px;box-shadow:var(--shadow);}
@@ -326,7 +327,8 @@ tbody td{padding:0;vertical-align:middle;}
           <select id="d-stato" onchange="fDot()"><option value="">Stato</option><option>ON</option><option>OFF</option></select>
           <select id="d-ph" onchange="fDot()"><option value="">Smartphone</option><option value="si">Con smartphone</option><option value="no">Senza</option></select>
           <button class="btn btn-grn" onclick="addDot()">+ Aggiungi</button>
-          <button class="btn" onclick="expCSV(dotData,'dotazioni')">↓ CSV</button>
+          <button class="btn" onclick="expCSV(dotFiltered,'dotazioni',['d-sede','d-stato','d-ph'])">↓ CSV</button>
+          <button class="btn-rst" id="rst-dot" onclick="resetFilters('dot')">✕ Reset filtri</button>
         </div>
       </div>
       <div class="tw"><table>
@@ -354,7 +356,8 @@ tbody td{padding:0;vertical-align:middle;}
           <input type="text" id="p-q" placeholder="Cerca ID o risorsa..." oninput="fPos()">
           <select id="p-st" onchange="fPos()"><option value="">Tutti gli stati</option><option>ATTIVO</option><option>CHIUSO</option></select>
           <button class="btn btn-grn" onclick="addPos()">+ Aggiungi</button>
-          <button class="btn" onclick="expCSV(posData,'poseidon_pcs')">↓ CSV</button>
+          <button class="btn" onclick="expCSV(posFiltered,'poseidon_pcs',['p-q','p-st'])">↓ CSV</button>
+          <button class="btn-rst" id="rst-pos" onclick="resetFilters('pos')">✕ Reset filtri</button>
         </div>
       </div>
       <div class="tw"><table>
@@ -382,7 +385,8 @@ tbody td{padding:0;vertical-align:middle;}
         <div class="ctrl">
           <input type="text" id="r-q" placeholder="Cerca beneficiario..." oninput="fReq()">
           <button class="btn btn-grn" onclick="addReq()">+ Aggiungi</button>
-          <button class="btn" onclick="expCSV(reqData,'richieste_pc')">↓ CSV</button>
+          <button class="btn" onclick="expCSV(reqFiltered,'richieste_pc',['r-q'])">↓ CSV</button>
+          <button class="btn-rst" id="rst-req" onclick="resetFilters('req')">✕ Reset filtri</button>
         </div>
       </div>
       <div class="tw"><table>
@@ -407,7 +411,8 @@ tbody td{padding:0;vertical-align:middle;}
         <div class="ctrl">
           <input type="text" id="m-q" placeholder="Cerca beneficiario..." oninput="fMob()">
           <button class="btn btn-grn" onclick="addMob()">+ Aggiungi</button>
-          <button class="btn" onclick="expCSV(mobData,'richieste_mobile')">↓ CSV</button>
+          <button class="btn" onclick="expCSV(mobFiltered,'richieste_mobile',['m-q'])">↓ CSV</button>
+          <button class="btn-rst" id="rst-mob" onclick="resetFilters('mob')">✕ Reset filtri</button>
         </div>
       </div>
       <div class="tw"><table>
@@ -441,7 +446,8 @@ tbody td{padding:0;vertical-align:middle;}
             <option>Laptop</option><option>Smartphone</option>
           </select>
           <button class="btn btn-grn" onclick="addRic()">+ Aggiungi</button>
-          <button class="btn" onclick="expCSV(ricData,'riconsegna_dispositivi')">↓ CSV</button>
+          <button class="btn" onclick="expCSV(ricFiltered,'riconsegna_dispositivi',['rc-mot','rc-dev'])">↓ CSV</button>
+          <button class="btn-rst" id="rst-ric" onclick="resetFilters('ric')">✕ Reset filtri</button>
         </div>
       </div>
       <div class="tw"><table>
@@ -470,6 +476,7 @@ const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZ
 const sb=supabase.createClient(SB_URL,SB_KEY);
 
 let dotData=[],posData=[],reqData=[],mobData=[],ricData=[];
+let dotFiltered=[],posFiltered=[],reqFiltered=[],mobFiltered=[],ricFiltered=[];
 let sorts={
   dot:{col:'nominativo',asc:true},
   pos:{col:'id_dispositivo',asc:true},
@@ -600,7 +607,33 @@ function renderCharts(){
     <div class="ch-card"><div class="ch-t">ON / OFF per sede</div>${sedi.map(s=>{const t=dotData.filter(d=>d.sede===s);const on=t.filter(d=>d.stato==='ON').length;return`<div class="bi"><div class="bl">${s}</div><div class="bt" style="display:flex"><div style="width:${t.length?Math.round(on/t.length*100):0}%;height:7px;background:var(--grn);border-radius:3px 0 0 3px"></div><div style="width:${t.length?Math.round((t.length-on)/t.length*100):0}%;height:7px;background:var(--red);border-radius:0 3px 3px 0"></div></div><div class="bc" style="font-size:9px;color:var(--mut)">${on}/${t.length}</div></div>`;}).join('')}</div>`;
 }
 
-// ── SORT ──────────────────────────────────────────────────────────────────────
+// ── RESET FILTRI ──────────────────────────────────────────────────────────────
+const FILTER_MAP={
+  dot:  {inputs:['d-q'],  selects:['d-sede','d-stato','d-ph'], fn:()=>fDot()},
+  pos:  {inputs:['p-q'],  selects:['p-st'],                    fn:()=>fPos()},
+  req:  {inputs:['r-q'],  selects:[],                          fn:()=>fReq()},
+  mob:  {inputs:['m-q'],  selects:[],                          fn:()=>fMob()},
+  ric:  {inputs:['rc-q'], selects:['rc-mot','rc-dev'],         fn:()=>fRic()},
+};
+
+function resetFilters(tbl){
+  const cfg=FILTER_MAP[tbl];if(!cfg)return;
+  cfg.inputs.forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  cfg.selects.forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  cfg.fn();
+}
+
+// Mostra/nasconde il bottone reset in base ai filtri attivi
+function updateResetBtn(tbl){
+  const cfg=FILTER_MAP[tbl];if(!cfg)return;
+  const hasFilter=
+    cfg.inputs.some(id=>(document.getElementById(id)||{}).value)||
+    cfg.selects.some(id=>(document.getElementById(id)||{}).value);
+  const btn=document.getElementById('rst-'+tbl);
+  if(btn) btn.classList.toggle('active',!!hasFilter);
+}
+
+
 function srt(tbl,col){
   const s=sorts[tbl];
   s.asc=s.col===col?!s.asc:true;
@@ -750,7 +783,10 @@ function fDot(){
   });
   const s=sorts.dot;
   data.sort((a,b)=>{const va=(a[s.col]||'').toLowerCase(),vb=(b[s.col]||'').toLowerCase();return s.asc?(va>vb?1:-1):(va<vb?1:-1);});
-  document.getElementById('d-cnt').textContent=data.length+' risultati';
+  dotFiltered=data;
+  const isFiltered=data.length<dotData.length;
+  document.getElementById('d-cnt').textContent=data.length+' risultati'+(isFiltered?` di ${dotData.length}`:'');
+  updateResetBtn('dot');
   const tb=document.getElementById('d-body');tb.innerHTML='';
   data.forEach(d=>{
     const tr=document.createElement('tr');
@@ -777,7 +813,10 @@ function fPos(){
   });
   const s=sorts.pos;
   data.sort((a,b)=>{const va=(a[s.col]||'').toString().toLowerCase(),vb=(b[s.col]||'').toString().toLowerCase();return s.asc?(va>vb?1:-1):(va<vb?1:-1);});
-  document.getElementById('p-cnt').textContent=data.length+' record';
+  posFiltered=data;
+  const isFiltered=data.length<posData.length;
+  document.getElementById('p-cnt').textContent=data.length+' record'+(isFiltered?` di ${posData.length}`:'');
+  updateResetBtn('pos');
   const tb=document.getElementById('p-body');tb.innerHTML='';
   data.forEach(p=>{
     const tr=document.createElement('tr');
@@ -800,7 +839,10 @@ function fReq(){
   let data=reqData.filter(r=>!q||(r.beneficiario||'').toLowerCase().includes(q)||(r.richiedente||'').toLowerCase().includes(q));
   const s=sorts.req;
   data.sort((a,b)=>{const va=(a[s.col]||'').toString().toLowerCase(),vb=(b[s.col]||'').toString().toLowerCase();return s.asc?(va>vb?1:-1):(va<vb?1:-1);});
-  document.getElementById('r-cnt').textContent=data.length+' richieste';
+  reqFiltered=data;
+  const isFiltered=data.length<reqData.length;
+  document.getElementById('r-cnt').textContent=data.length+' richieste'+(isFiltered?` di ${reqData.length}`:'');
+  updateResetBtn('req');
   const tb=document.getElementById('r-body');tb.innerHTML='';
   data.forEach(r=>{
     const tr=document.createElement('tr');
@@ -1079,7 +1121,10 @@ function fMob(){
   let data=mobData.filter(r=>!q||(r.beneficiario||'').toLowerCase().includes(q)||(r.richiedente||'').toLowerCase().includes(q));
   const s=sorts.mob;
   data.sort((a,b)=>{const va=(a[s.col]||'').toString().toLowerCase(),vb=(b[s.col]||'').toString().toLowerCase();return s.asc?(va>vb?1:-1):(va<vb?1:-1);});
-  document.getElementById('m-cnt').textContent=data.length+' richieste';
+  mobFiltered=data;
+  const isFiltered=data.length<mobData.length;
+  document.getElementById('m-cnt').textContent=data.length+' richieste'+(isFiltered?` di ${mobData.length}`:'');
+  updateResetBtn('mob');
   const tb=document.getElementById('m-body');tb.innerHTML='';
   data.forEach(r=>{
     const tr=document.createElement('tr');
@@ -1124,7 +1169,10 @@ function fRic(){
   });
   const s=sorts.ric;
   data.sort((a,b)=>{const va=(a[s.col]||'').toString().toLowerCase(),vb=(b[s.col]||'').toString().toLowerCase();return s.asc?(va>vb?1:-1):(va<vb?1:-1);});
-  document.getElementById('rc-cnt').textContent=data.length+' riconsegne';
+  ricFiltered=data;
+  const isFiltered=data.length<ricData.length;
+  document.getElementById('rc-cnt').textContent=data.length+' riconsegne'+(isFiltered?` di ${ricData.length}`:'');
+  updateResetBtn('ric');
   const tb=document.getElementById('rc-body');tb.innerHTML='';
   data.forEach(r=>{
     const tr=document.createElement('tr');
@@ -1149,13 +1197,30 @@ async function addRic(){
 }
 
 
-function expCSV(data,name){
-  if(!data.length)return;
+// ── CSV EXPORT ────────────────────────────────────────────────────────────────
+
+// Costruisce il suffisso _Filtro1_Filtro2 dai filtri attivi
+function filterSuffix(ids){
+  return ids
+    .map(id=>{ const el=document.getElementById(id); return el?(el.value||'').trim():''; })
+    .filter(Boolean)
+    .map(v=>v.replace(/[^a-zA-Z0-9À-ÿ]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,''))
+    .filter(Boolean)
+    .join('_');
+}
+
+function expCSV(data, name, filterIds=[]){
+  if(!data||!data.length){toast('Nessun dato da esportare','err');return;}
   const cols=Object.keys(data[0]).filter(k=>k!=='id'&&k!=='updated_at');
+  const content=[cols.join(','),...data.map(r=>cols.map(c=>`"${(r[c]||'').toString().replace(/"/g,'""')}"`).join(','))].join('\n');
+  const date=new Date().toLocaleDateString('it-IT').replace(/\//g,'-');
+  const suffix=filterSuffix(filterIds);
+  const filename=`${name}${suffix?'_'+suffix:''}_${date}.csv`;
   const a=document.createElement('a');
-  a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent([cols.join(','),...data.map(r=>cols.map(c=>`"${(r[c]||'').toString().replace(/"/g,'""')}"`).join(','))].join('\n'));
-  a.download=name+'_'+new Date().toLocaleDateString('it-IT').replace(/\//g,'-')+'.csv';
+  a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(content);
+  a.download=filename;
   a.click();
+  toast(`↓ ${data.length} righe → <b>${filename}</b>`,'inf');
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
